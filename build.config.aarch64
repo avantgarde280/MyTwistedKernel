@@ -1,0 +1,14 @@
+ARCH=arm64
+
+CC=clang
+# CLANG_TRIPLE=aarch64-linux-gnu-
+CROSS_COMPILE=aarch64-linux-gnu-
+CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+# LINUX_GCC_CROSS_COMPILE_PREBUILTS_BIN=prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin
+CLANG_PREBUILT_BIN=/home/myripple/mykernel/bin
+
+FILES="
+arch/arm64/boot/Image.gz
+vmlinux
+System.map
+"
