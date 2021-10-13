@@ -31,6 +31,7 @@ jobs:
     - name: Release build
       uses: ncipollo/release-action@v1
       with:
-        artifacts: "/github/workspace/zipper/*.zip, /github/workspace/zipper/*.gz-dtb, /github/workspace/out/arch/arm64/boot/*.gz-dtb"
+        artifacts: "zipper/*.zip, zipper/*.gz-dtb"
+        #"/github/workspace/zipper/*.zip, /github/workspace/zipper/*.gz-dtb, /github/workspace/out/arch/arm64/boot/*.gz-dtb"
         token: ${{ secrets.GITHUB_TOKEN }}
 
