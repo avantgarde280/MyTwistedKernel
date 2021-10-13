@@ -24,7 +24,7 @@ jobs:
         NAME: TwistedKernel
       with:
         arch: arm64
-        compiler: proton-clang/master
+        compiler: proton-clang/master/binutils
         defconfig: twisted_mimix2s_v44_defconfig
         image: Image.gz-dtb
 
