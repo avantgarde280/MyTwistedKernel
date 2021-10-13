@@ -37,5 +37,4 @@ jobs:
         token: "2049951634:AAH9bKEiRZQdnTJ-EJm0U1O8H2WNa7R1KS8"
         #${{ secrets.TELEGRAM_BOT_TOKEN }}
         message: Kernel is built!, took ${{ steps.build.outputs.elapsed_time }} seconds.
-        document: "zipper/*.zip, out/arch/arm64/boot/*.gz-dtb"
-        #${{ steps.build.outputs.outfile }}
+        document: ${{ steps.build.outputs.outfile }}
