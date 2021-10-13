@@ -1,0 +1,41 @@
+# This is a basic workflow to help you get started with Actions
+name: Build on push master
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout kernel source
+      uses: actions/checkout@v2
+
+    - name: Checkout zipper
+      uses: actions/checkout@v2
+      with:
+        repository: lemniskett/AnyKernel3
+        path: zipper
+
+    - name: Android kernel build
+      uses: lemniskett/android-kernel-actions@master
+      id: build
+      env:
+        NAME: TwistedKernel
+      with:
+        arch: arm64
+        compiler: gcc/10
+        defconfig: vince_defconfig
+        image: Image.gz-dtb
+
+    - name: Release build
+      uses: appleboy/telegram-action@master
+      with:
+        to: "543221957" 
+        #${{ secrets.CHANNEL_ID }}
+        token: "2049951634:AAH9bKEiRZQdnTJ-EJm0U1O8H2WNa7R1KS8"
+        #${{ secrets.TELEGRAM_BOT_TOKEN }}
+        message: Kernel is built!, took ${{ steps.build.outputs.elapsed_time }} seconds.
+        document: "zipper/*.zip, out/arch/arm64/boot/*.gz-dtb"
+        #${{ steps.build.outputs.outfile }}
