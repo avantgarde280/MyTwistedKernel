@@ -15,7 +15,7 @@ jobs:
     - name: Checkout zipper
       uses: actions/checkout@v2
       with:
-        repository: lemniskett/AnyKernel3
+        repository: avantgarde280/AnyKernel3
         path: zipper
 
     - name: Android kernel build
@@ -25,8 +25,8 @@ jobs:
         NAME: TwistedKernel
       with:
         arch: arm64
-        compiler: gcc/10
-        defconfig: vince_defconfig
+        compiler: proton-clang/master/binutils
+        defconfig: twisted_mimix2s_v44_defconfig
         image: Image.gz-dtb
 
     - name: Release build
