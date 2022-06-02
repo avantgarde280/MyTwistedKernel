@@ -425,13 +425,6 @@ static int pmic_arb_write_cmd(struct spmi_controller *ctrl, u8 opc, u8 sid,
 	if (rc)
 		return rc;
 
-	if (!(mode & 0200)) {
-		dev_err(&pa->spmic->dev,
-			"error: impermissible write to peripheral sid:%d addr:0x%x\n",
-			sid, addr);
-		return -ENODEV;
-	}
-
 	if (bc >= PMIC_ARB_MAX_TRANS_BYTES) {
 		dev_err(&ctrl->dev,
 			"pmic-arb supports 1..%d bytes per trans, but:%zu requested",
@@ -884,8 +877,9 @@ static u16 pmic_arb_find_apid(struct spmi_pmic_arb *pa, u16 ppid)
 			break;
 		regval = readl_relaxed(pa->cnfg +
 				      SPMI_OWNERSHIP_TABLE_REG(apid));
-		pa->apid_data[apid].owner = SPMI_OWNERSHIP_PERIPH2OWNER(regval);
-
+		pa->apid_data[apid].irq_owner
+			= SPMI_OWNERSHIP_PERIPH2OWNER(regval);
+		pa->apid_data[apid].write_owner = pa->apid_data[apid].irq_owner;
 		regval = readl_relaxed(pa->core + offset);
 		if (!regval)
 			continue;
@@ -1165,7 +1159,6 @@ static const struct pmic_arb_ver_ops pmic_arb_v3 = {
 static const struct pmic_arb_ver_ops pmic_arb_v5 = {
 	.ver_str		= "v5",
 	.ppid_to_apid		= pmic_arb_ppid_to_apid_v5,
-	.mode			= pmic_arb_mode_v2,
 	.non_data_cmd		= pmic_arb_non_data_cmd_v2,
 	.offset			= pmic_arb_offset_v5,
 	.fmt_cmd		= pmic_arb_fmt_cmd_v2,
