@@ -420,13 +420,8 @@ static int pmic_arb_write_cmd(struct spmi_controller *ctrl, u8 opc, u8 sid,
 	u32 cmd;
 	int rc;
 	u32 offset;
-	mode_t mode;
 
 	rc = pa->ver_ops->offset(pa, sid, addr, PMIC_ARB_CHANNEL_RW, &offset);
-	if (rc)
-		return rc;
-
-	rc = pa->ver_ops->mode(pa, sid, addr, &mode);
 	if (rc)
 		return rc;
 
