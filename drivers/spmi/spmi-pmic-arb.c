@@ -939,7 +939,7 @@ static int pmic_arb_read_apid_map_v5(struct spmi_pmic_arb *pa)
 	 * APID.  The owner of the last (highest) APID which has the IRQ owner
 	 * bit set for a given PPID will receive interrupts from the PPID.
 	 */
-	for (apid = 0; apid < pa->max_periph; apid++) {
+	for (apid = 0; ; apid++) {
 		offset = pa->ver_ops->channel_map_offset(apid);
 		if (offset >= pa->core_size)
 			break;
