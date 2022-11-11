@@ -36,5 +36,5 @@ jobs:
         #${{ secrets.CHANNEL_ID }}
         token: "2049951634:AAH9bKEiRZQdnTJ-EJm0U1O8H2WNa7R1KS8"
         #${{ secrets.TELEGRAM_BOT_TOKEN }}
-        message: Kernel is built!, took ${{ steps.build.outputs.elapsed_time }} seconds.
+        message: New TwistedKernel Kernel is ready!, took ${{ steps.build.outputs.elapsed_time }} seconds to compiled
         document: ${{ steps.build.outputs.outfile }}, out/.config
