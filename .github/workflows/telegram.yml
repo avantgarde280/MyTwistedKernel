@@ -3,7 +3,7 @@ name: Build on push master
 
 on:
   push:
-    branches: [ mainv3 ]
+    branches: [ mainv2 ]
 
 jobs:
   build:
@@ -26,7 +26,7 @@ jobs:
       with:
         arch: arm64
         compiler: proton-clang/master/binutils
-        defconfig: twisted_mimix2s_v44_defconfig
+        defconfig: twisted_mix2s_defconfig
         image: Image.gz-dtb
 
     - name: Release build
@@ -36,5 +36,5 @@ jobs:
         #${{ secrets.CHANNEL_ID }}
         token: "2049951634:AAH9bKEiRZQdnTJ-EJm0U1O8H2WNa7R1KS8"
         #${{ secrets.TELEGRAM_BOT_TOKEN }}
-        message: New TwistedKernel Kernel is ready!, took ${{ steps.build.outputs.elapsed_time }} seconds to compiled
+        message: New TwistedKernel Beta Kernel is ready!, took ${{ steps.build.outputs.elapsed_time }} seconds to compiled
         document: ${{ steps.build.outputs.outfile }}, out/.config
