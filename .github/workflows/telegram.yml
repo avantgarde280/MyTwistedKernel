@@ -3,7 +3,7 @@ name: Build on push master
 
 on:
   push:
-    branches: [ mainv2 ]
+    branches: [ wireguard-update ]
 
 jobs:
   build:
@@ -22,7 +22,7 @@ jobs:
       uses: lemniskett/android-kernel-actions@master
       id: build
       env:
-        NAME: TwistedKernel
+        NAME: TwistedKernel-Beta
       with:
         arch: arm64
         compiler: proton-clang/master/binutils
@@ -37,4 +37,4 @@ jobs:
         token: "2049951634:AAH9bKEiRZQdnTJ-EJm0U1O8H2WNa7R1KS8"
         #${{ secrets.TELEGRAM_BOT_TOKEN }}
         message: New TwistedKernel Beta Kernel is ready!, took ${{ steps.build.outputs.elapsed_time }} seconds to compiled
-        document: ${{ steps.build.outputs.outfile }}, out/.config
+        document: ${{ steps.build.outputs.outfile }}, out/.config, net/wireguard/version.h
