@@ -3,7 +3,7 @@ name: Build on push master
 
 on:
   push:
-    branches: [ wireguard-update ]
+    branches: [ wireguard-update2 ]
 
 jobs:
   build:
