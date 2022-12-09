@@ -37,8 +37,8 @@ const char *task_event_names[] = {"PUT_PREV_TASK", "PICK_NEXT_TASK",
 const char *migrate_type_names[] = {"GROUP_TO_RQ", "RQ_TO_GROUP",
 					 "RQ_TO_RQ", "GROUP_TO_GROUP"};
 
-#define SCHED_FREQ_ACCOUNT_WAIT_TIME 0
-#define SCHED_ACCOUNT_WAIT_TIME 1
+#define SCHED_FREQ_UNT_WAIT_TIME 0
+#define SCHED_UNT_WAIT_TIME 1
 
 #define EARLY_DETECTION_DURATION 9500000
 
@@ -396,7 +396,7 @@ bool early_detection_notify(struct rq *rq, u64 wallclock)
 	return 0;
 }
 
-void sched_account_irqstart(int cpu, struct task_struct *curr, u64 wallclock)
+void sched_unt_irqstart(int cpu, struct task_struct *curr, u64 wallclock)
 {
 	struct rq *rq = cpu_rq(cpu);
 
@@ -424,6 +424,13 @@ void sched_account_irqstart(int cpu, struct task_struct *curr, u64 wallclock)
  * This is simply nr_big_tasks for cpus which are not of max_capacity and
  * nr_running for cpus of max_capacity
  */
+unsigned int walt_big_tasks(int cpu)
+{
+	struct rq *rq = cpu_rq(cpu);
+
+	return rq->walt_stats.nr_big_tasks;
+}
+
 unsigned int nr_eligible_big_tasks(int cpu)
 {
 	struct rq *rq = cpu_rq(cpu);
@@ -457,7 +464,7 @@ void clear_walt_request(int cpu)
 	}
 }
 
-void sched_account_irqtime(int cpu, struct task_struct *curr,
+void sched_unt_irqtime(int cpu, struct task_struct *curr,
 				 u64 delta, u64 wallclock)
 {
 	struct rq *rq = cpu_rq(cpu);
@@ -572,7 +579,7 @@ done:
  * the curent or the previous window. This could happen whenever CPUs
  * become idle or busy with interrupts disabled for an extended period.
  */
-static inline void account_load_subtractions(struct rq *rq)
+static inline void unt_load_subtractions(struct rq *rq)
 {
 	u64 ws = rq->window_start;
 	u64 prev_ws = ws - sched_ravg_window;
@@ -1099,7 +1106,7 @@ void update_task_pred_demand(struct rq *rq, struct task_struct *p, int event)
 		return;
 
 	if (event != PUT_PREV_TASK && event != TASK_UPDATE &&
-			(!SCHED_FREQ_ACCOUNT_WAIT_TIME ||
+			(!SCHED_FREQ_UNT_WAIT_TIME ||
 			 (event != TASK_MIGRATE &&
 			 event != PICK_NEXT_TASK)))
 		return;
@@ -1109,7 +1116,7 @@ void update_task_pred_demand(struct rq *rq, struct task_struct *p, int event)
 	 * related groups
 	 */
 	if (event == TASK_UPDATE) {
-		if (!p->on_rq && !SCHED_FREQ_ACCOUNT_WAIT_TIME)
+		if (!p->on_rq && !SCHED_FREQ_UNT_WAIT_TIME)
 			return;
 	}
 
@@ -1291,7 +1298,7 @@ static inline int cpu_is_waiting_on_io(struct rq *rq)
 	return atomic_read(&rq->nr_iowait);
 }
 
-static int account_busy_for_cpu_time(struct rq *rq, struct task_struct *p,
+static int unt_busy_for_cpu_time(struct rq *rq, struct task_struct *p,
 				     u64 irqtime, int event)
 {
 	if (is_idle_task(p)) {
@@ -1317,11 +1324,11 @@ static int account_busy_for_cpu_time(struct rq *rq, struct task_struct *p,
 		if (rq->curr == p)
 			return 1;
 
-		return p->on_rq ? SCHED_FREQ_ACCOUNT_WAIT_TIME : 0;
+		return p->on_rq ? SCHED_FREQ_UNT_WAIT_TIME : 0;
 	}
 
 	/* TASK_MIGRATE, PICK_NEXT_TASK left */
-	return SCHED_FREQ_ACCOUNT_WAIT_TIME;
+	return SCHED_FREQ_UNT_WAIT_TIME;
 }
 
 #define DIV64_U64_ROUNDUP(X, Y) div64_u64((X) + (Y - 1), Y)
@@ -1391,7 +1398,7 @@ static void rollover_cpu_window(struct rq *rq, bool full_window)
 }
 
 /*
- * Account cpu activity in its busy time counters (rq->curr/prev_runnable_sum)
+ * unt cpu activity in its busy time counters (rq->curr/prev_runnable_sum)
  */
 static void update_cpu_busy_time(struct task_struct *p, struct rq *rq,
 				 int event, u64 wallclock, u64 irqtime)
@@ -1434,7 +1441,7 @@ static void update_cpu_busy_time(struct task_struct *p, struct rq *rq,
 		rollover_top_tasks(rq, full_window);
 	}
 
-	if (!account_busy_for_cpu_time(rq, p, irqtime, event))
+	if (!unt_busy_for_cpu_time(rq, p, irqtime, event))
 		goto done;
 
 	grp = p->grp;
@@ -1450,8 +1457,8 @@ static void update_cpu_busy_time(struct task_struct *p, struct rq *rq,
 
 	if (!new_window) {
 		/*
-		 * account_busy_for_cpu_time() = 1 so busy time needs
-		 * to be accounted to the current window. No rollover
+		 * unt_busy_for_cpu_time() = 1 so busy time needs
+		 * to be unted to the current window. No rollover
 		 * since we didn't start a new window. An example of this is
 		 * when a task starts execution and then sleeps within the
 		 * same window.
@@ -1476,21 +1483,21 @@ static void update_cpu_busy_time(struct task_struct *p, struct rq *rq,
 
 	if (!p_is_curr_task) {
 		/*
-		 * account_busy_for_cpu_time() = 1 so busy time needs
-		 * to be accounted to the current window. A new window
+		 * unt_busy_for_cpu_time() = 1 so busy time needs
+		 * to be unted to the current window. A new window
 		 * has also started, but p is not the current task, so the
-		 * window is not rolled over - just split up and account
+		 * window is not rolled over - just split up and unt
 		 * as necessary into curr and prev. The window is only
 		 * rolled over when a new window is processed for the current
 		 * task.
 		 *
-		 * Irqtime can't be accounted by a task that isn't the
+		 * Irqtime can't be unted by a task that isn't the
 		 * currently running task.
 		 */
 
 		if (!full_window) {
 			/*
-			 * A full window hasn't elapsed, account partial
+			 * A full window hasn't elapsed, unt partial
 			 * contribution to previous completed window.
 			 */
 			delta = scale_exec_time(window_start - mark_start, rq);
@@ -1515,7 +1522,7 @@ static void update_cpu_busy_time(struct task_struct *p, struct rq *rq,
 		if (new_task)
 			*nt_prev_runnable_sum += delta;
 
-		/* Account piece of busy time in the current window. */
+		/* unt piece of busy time in the current window. */
 		delta = scale_exec_time(wallclock - window_start, rq);
 		*curr_runnable_sum += delta;
 		if (new_task)
@@ -1531,14 +1538,14 @@ static void update_cpu_busy_time(struct task_struct *p, struct rq *rq,
 
 	if (!irqtime || !is_idle_task(p) || cpu_is_waiting_on_io(rq)) {
 		/*
-		 * account_busy_for_cpu_time() = 1 so busy time needs
-		 * to be accounted to the current window. A new window
+		 * unt_busy_for_cpu_time() = 1 so busy time needs
+		 * to be unted to the current window. A new window
 		 * has started and p is the current task so rollover is
 		 * needed. If any of these three above conditions are true
-		 * then this busy time can't be accounted as irqtime.
+		 * then this busy time can't be unted as irqtime.
 		 *
 		 * Busy time for the idle task or exiting tasks need not
-		 * be accounted.
+		 * be unted.
 		 *
 		 * An example of this would be a task that starts execution
 		 * and then sleeps once a new window has begun.
@@ -1546,7 +1553,7 @@ static void update_cpu_busy_time(struct task_struct *p, struct rq *rq,
 
 		if (!full_window) {
 			/*
-			 * A full window hasn't elapsed, account partial
+			 * A full window hasn't elapsed, unt partial
 			 * contribution to previous completed window.
 			 */
 			delta = scale_exec_time(window_start - mark_start, rq);
@@ -1575,7 +1582,7 @@ static void update_cpu_busy_time(struct task_struct *p, struct rq *rq,
 		if (new_task)
 			*nt_prev_runnable_sum += delta;
 
-		/* Account piece of busy time in the current window. */
+		/* unt piece of busy time in the current window. */
 		delta = scale_exec_time(wallclock - window_start, rq);
 		*curr_runnable_sum += delta;
 		if (new_task)
@@ -1591,13 +1598,13 @@ static void update_cpu_busy_time(struct task_struct *p, struct rq *rq,
 
 	if (irqtime) {
 		/*
-		 * account_busy_for_cpu_time() = 1 so busy time needs
-		 * to be accounted to the current window. A new window
+		 * unt_busy_for_cpu_time() = 1 so busy time needs
+		 * to be unted to the current window. A new window
 		 * has started and p is the current task so rollover is
 		 * needed. The current task must be the idle task because
-		 * irqtime is not accounted for any other task.
+		 * irqtime is not unted for any other task.
 		 *
-		 * Irqtime will be accounted each time we process IRQ activity
+		 * Irqtime will be unted each time we process IRQ activity
 		 * after a period of idleness, so we know the IRQ busy time
 		 * started at wallclock - irqtime.
 		 */
@@ -1607,7 +1614,7 @@ static void update_cpu_busy_time(struct task_struct *p, struct rq *rq,
 
 		/*
 		 * Roll window over. If IRQ busy time was just in the current
-		 * window then that is all that need be accounted.
+		 * window then that is all that need be unted.
 		 */
 		if (mark_start > window_start) {
 			*curr_runnable_sum = scale_exec_time(irqtime, rq);
@@ -1655,7 +1662,7 @@ static inline u32 predict_and_update_buckets(struct rq *rq,
 }
 
 static int
-account_busy_for_task_demand(struct rq *rq, struct task_struct *p, int event)
+unt_busy_for_task_demand(struct rq *rq, struct task_struct *p, int event)
 {
 	/*
 	 * No need to bother updating task demand for exiting tasks
@@ -1670,7 +1677,7 @@ account_busy_for_task_demand(struct rq *rq, struct task_struct *p, int event)
 	 * when a task begins to run or is migrated, it is not running and
 	 * is completing a segment of non-busy time.
 	 */
-	if (event == TASK_WAKE || (!SCHED_ACCOUNT_WAIT_TIME &&
+	if (event == TASK_WAKE || (!SCHED_UNT_WAIT_TIME &&
 			 (event == PICK_NEXT_TASK || event == TASK_MIGRATE)))
 		return 0;
 
@@ -1682,7 +1689,7 @@ account_busy_for_task_demand(struct rq *rq, struct task_struct *p, int event)
 		if (rq->curr == p)
 			return 1;
 
-		return p->on_rq ? SCHED_ACCOUNT_WAIT_TIME : 0;
+		return p->on_rq ? SCHED_UNT_WAIT_TIME : 0;
 	}
 
 	return 1;
@@ -1780,7 +1787,7 @@ static u64 add_to_task_demand(struct rq *rq, struct task_struct *p, u64 delta)
 }
 
 /*
- * Account cpu demand of task and/or update task's cpu demand history
+ * unt cpu demand of task and/or update task's cpu demand history
  *
  * ms = p->ravg.mark_start;
  * wc = wallclock
@@ -1839,15 +1846,15 @@ static u64 update_task_demand(struct task_struct *p, struct rq *rq,
 	u64 runtime;
 
 	new_window = mark_start < window_start;
-	if (!account_busy_for_task_demand(rq, p, event)) {
+	if (!unt_busy_for_task_demand(rq, p, event)) {
 		if (new_window)
 			/*
-			 * If the time accounted isn't being accounted as
+			 * If the time unted isn't being unted as
 			 * busy time, and a new window started, only the
 			 * previous window need be closed out with the
 			 * pre-existing demand. Multiple windows may have
 			 * elapsed, but since empty windows are dropped,
-			 * it is not necessary to account those.
+			 * it is not necessary to unt those.
 			 */
 			update_history(rq, p, p->ravg.sum, 1, event);
 		return 0;
@@ -1915,7 +1922,7 @@ update_task_rq_cpu_cycles(struct task_struct *p, struct rq *rq, int event,
 	 * If current task is idle task and irqtime == 0 CPU was
 	 * indeed idle and probably its cycle counter was not
 	 * increasing.  We still need estimatied CPU frequency
-	 * for IO wait time accounting.  Use the previously
+	 * for IO wait time unting.  Use the previously
 	 * calculated frequency in such a case.
 	 */
 	if (!is_idle_task(rq->curr) || irqtime) {
@@ -1929,7 +1936,7 @@ update_task_rq_cpu_cycles(struct task_struct *p, struct rq *rq, int event,
 			/*
 			 * Time between mark_start of idle task and IRQ handler
 			 * entry time is CPU cycle counter stall period.
-			 * Upon IRQ handler entry sched_account_irqstart()
+			 * Upon IRQ handler entry sched_unt_irqstart()
 			 * replenishes idle task's cpu cycle counter so
 			 * rq->cc.cycles now represents increased cycles during
 			 * IRQ handler rather than time between idle entry and
@@ -3063,7 +3070,7 @@ void note_task_waking(struct task_struct *p, u64 wallclock)
 }
 
 /*
- * Task's cpu usage is accounted in:
+ * Task's cpu usage is unted in:
  *	rq->curr/prev_runnable_sum,  when its ->grp is NULL
  *	grp->cpu_time[cpu]->curr/prev_runnable_sum, when its ->grp is !NULL
  *
@@ -3275,7 +3282,7 @@ void walt_irq_work(struct irq_work *irq_work)
 			if (rq->curr) {
 				update_task_ravg(rq->curr, rq,
 						TASK_UPDATE, wc, 0);
-				account_load_subtractions(rq);
+				unt_load_subtractions(rq);
 				aggr_grp_load += rq->grp_time.prev_runnable_sum;
 			}
 		}
