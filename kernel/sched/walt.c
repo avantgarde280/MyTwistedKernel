@@ -3357,7 +3357,7 @@ int walt_proc_update_handler(struct ctl_table *table, int write,
 	return ret;
 }
 
-void walt_sched_init(struct rq *rq)
+void walt_sched_init_rq(struct rq *rq)
 {
 	int j;
 
