@@ -1142,7 +1142,7 @@ void update_task_pred_demand(struct rq *rq, struct task_struct *p, int event)
 
 	if (task_on_rq_queued(p) && (!task_has_dl_policy(p) ||
 				!p->dl.dl_throttled))
-		p->sched_class->fixup_walt_sched_stats(rq, p,
+		p->sched_class->fixup_walt_sched_stats_common(rq, p,
 				p->ravg.demand,
 				new);
 
@@ -1776,7 +1776,7 @@ static void update_history(struct rq *rq, struct task_struct *p,
 	 */
 	if (!task_has_dl_policy(p) || !p->dl.dl_throttled) {
 		if (task_on_rq_queued(p))
-			p->sched_class->fixup_walt_sched_stats(rq, p, demand,
+			p->sched_class->fixup_walt_sched_stats_common(rq, p, demand,
 							       pred_demand);
 		else if (rq->curr == p)
 			walt_fixup_cum_window_demand(rq, demand);
