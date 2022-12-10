@@ -2750,6 +2750,8 @@ unsigned int update_freq_aggregate_threshold(unsigned int threshold)
 	return old_threshold;
 }
 
+EXPORT_SYMBOL(update_freq_aggregate_threshold);
+
 #define ADD_TASK	0
 #define REM_TASK	1
 
