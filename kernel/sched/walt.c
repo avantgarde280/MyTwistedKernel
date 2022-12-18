@@ -53,8 +53,8 @@ u64 walt_load_reported_window;
 static struct irq_work walt_cpufreq_irq_work;
 static struct irq_work walt_migration_irq_work;
 
-static void
-fixup_cumulative_runnable_avg(struct rq *rq,
+void
+walt_fixup_cumulative_runnable_avg(struct rq *rq,
 				   struct task_struct *p, u64 new_task_load)
 {
 	s64 task_load_delta = (s64)new_task_load - task_load(p);
@@ -171,7 +171,6 @@ __read_mostly unsigned int sched_ravg_window =
 __read_mostly unsigned int walt_cpu_util_freq_divisor;
 
 /* Initial task load. Newly created tasks are assigned this load. */
-unsigned int __read_mostly sched_init_task_load_windows;
 unsigned int __read_mostly sysctl_sched_init_task_load_pct = 15;
 
 /*
@@ -321,7 +320,7 @@ void fixup_walt_sched_stats_common(struct rq *rq, struct task_struct *p,
  *	C1 busy time = 5 + 5 + 6 = 16ms
  *
  */
-__read_mostly bool sched_freq_aggr_en;
+__read_mostly int sched_freq_aggregate_threshold;
 
 static u64
 update_window_start(struct rq *rq, u64 wallclock, int event)
@@ -442,12 +441,18 @@ void sched_account_irqstart(int cpu, struct task_struct *curr, u64 wallclock)
 
 /*
  * Return total number of tasks "eligible" to run on highest capacity cpu
+ *
+ * This is simply nr_big_tasks for cpus which are not of max_capacity and
+ * nr_running for cpus of max_capacity
  */
-unsigned int walt_big_tasks(int cpu)
+unsigned int nr_eligible_big_tasks(int cpu)
 {
 	struct rq *rq = cpu_rq(cpu);
 
-	return rq->walt_stats.nr_big_tasks;
+	if (!is_max_capacity_cpu(cpu))
+		return rq->walt_stats.nr_big_tasks;
+
+	return rq->nr_running;
 }
 
 void clear_walt_request(int cpu)
@@ -540,6 +545,7 @@ static u32  top_task_load(struct rq *rq)
 u64 freq_policy_load(struct rq *rq)
 {
 	unsigned int reporting_policy = sysctl_sched_freq_reporting_policy;
+	int freq_aggr_thresh = sched_freq_aggregate_threshold;
 	struct sched_cluster *cluster = rq->cluster;
 	u64 aggr_grp_load = cluster->aggr_grp_load;
 	u64 load, tt_load = 0;
@@ -550,7 +556,7 @@ u64 freq_policy_load(struct rq *rq)
 		goto done;
 	}
 
-	if (sched_freq_aggr_en)
+	if (aggr_grp_load > freq_aggr_thresh)
 		load = rq->prev_runnable_sum + aggr_grp_load;
 	else
 		load = rq->prev_runnable_sum + rq->grp_time.prev_runnable_sum;
@@ -573,7 +579,7 @@ u64 freq_policy_load(struct rq *rq)
 	}
 
 done:
-	trace_sched_load_to_gov(rq, aggr_grp_load, tt_load, sched_freq_aggr_en,
+	trace_sched_load_to_gov(rq, aggr_grp_load, tt_load, freq_aggr_thresh,
 				load, reporting_policy, walt_rotation_enabled,
 				sysctl_sched_little_cluster_coloc_fmin_khz,
 				coloc_boost_load);
@@ -1770,7 +1776,7 @@ static void update_history(struct rq *rq, struct task_struct *p,
 	 */
 	if (!task_has_dl_policy(p) || !p->dl.dl_throttled) {
 		if (task_on_rq_queued(p))
-			fixup_cumulative_runnable_avg(rq, p, demand,
+			p->sched_class->fixup_walt_sched_stats(rq, p, demand,
 							       pred_demand);
 		else if (rq->curr == p)
 			walt_fixup_cum_window_demand(rq, demand);
@@ -2030,8 +2036,8 @@ int sched_set_init_task_load(struct task_struct *p, int init_load_pct)
 void init_new_task_load(struct task_struct *p)
 {
 	int i;
-	u32 init_load_windows = sched_init_task_load_windows;
-	u32 init_load_pct = current->init_load_pct;
+	u32 init_load_windows;
+	u32 init_load_pct;
 
 	p->init_load_pct = 0;
 	rcu_assign_pointer(p->grp, NULL);
@@ -2045,9 +2051,13 @@ void init_new_task_load(struct task_struct *p)
 	/* Don't have much choice. CPU frequency would be bogus */
 	BUG_ON(!p->ravg.curr_window_cpu || !p->ravg.prev_window_cpu);
 
-	if (init_load_pct)
-		init_load_windows = div64_u64((u64)init_load_pct *
-			  (u64)sched_ravg_window, 100);
+	if (current->init_load_pct)
+		init_load_pct = current->init_load_pct;
+	else
+		init_load_pct = sysctl_sched_init_task_load_pct;
+
+	init_load_windows = div64_u64((u64)init_load_pct *
+				(u64)sched_ravg_window, 100);
 
 	p->ravg.demand = init_load_windows;
 	p->ravg.coloc_demand = init_load_windows;
@@ -2557,9 +2567,14 @@ static void transfer_busy_time(struct rq *rq, struct related_thread_group *grp,
  */
 unsigned int __read_mostly sysctl_sched_enable_thread_grouping;
 
+/* Maximum allowed threshold before freq aggregation must be enabled */
+#define MAX_FREQ_AGGR_THRESH 1000
+
 struct related_thread_group *related_thread_groups[MAX_NUM_CGROUP_COLOC_ID];
 static LIST_HEAD(active_related_thread_groups);
 DEFINE_RWLOCK(related_thread_group_lock);
+
+unsigned int __read_mostly sysctl_sched_freq_aggregate_threshold_pct;
 
 /*
  * Task groups whose aggregate demand on a cpu is more than
@@ -2717,6 +2732,23 @@ DEFINE_MUTEX(policy_mutex);
 
 #define pct_to_real(tunable)	\
 		(div64_u64((u64)tunable * (u64)max_task_load(), 100))
+
+unsigned int update_freq_aggregate_threshold(unsigned int threshold)
+{
+	unsigned int old_threshold;
+
+	mutex_lock(&policy_mutex);
+
+	old_threshold = sysctl_sched_freq_aggregate_threshold_pct;
+
+	sysctl_sched_freq_aggregate_threshold_pct = threshold;
+	sched_freq_aggregate_threshold =
+		pct_to_real(sysctl_sched_freq_aggregate_threshold_pct);
+
+	mutex_unlock(&policy_mutex);
+
+	return old_threshold;
+}
 
 #define ADD_TASK	0
 #define REM_TASK	1
@@ -2948,6 +2980,7 @@ static int __init create_default_coloc_group(void)
 	list_add(&grp->list, &active_related_thread_groups);
 	write_unlock_irqrestore(&related_thread_group_lock, flags);
 
+	update_freq_aggregate_threshold(MAX_FREQ_AGGR_THRESH);
 	return 0;
 }
 late_initcall(create_default_coloc_group);
@@ -3345,28 +3378,15 @@ int walt_proc_update_handler(struct ctl_table *table, int write,
 	return ret;
 }
 
-static void walt_init_once(void)
+void walt_sched_init(struct rq *rq)
 {
+	int j;
+
+	cpumask_set_cpu(cpu_of(rq), &rq->freq_domain_cpumask);
 	init_irq_work(&walt_migration_irq_work, walt_irq_work);
 	init_irq_work(&walt_cpufreq_irq_work, walt_irq_work);
 	walt_rotate_work_init();
 
-	walt_cpu_util_freq_divisor =
-	    (sched_ravg_window >> SCHED_CAPACITY_SHIFT) * 100;
-
-	sched_init_task_load_windows =
-		div64_u64((u64)sysctl_sched_init_task_load_pct *
-			  (u64)sched_ravg_window, 100);
-}
-
-void walt_sched_init_rq(struct rq *rq)
-{
-	int j;
-
-	if (cpu_of(rq) == 0)
-		walt_init_once();
-
-	cpumask_set_cpu(cpu_of(rq), &rq->freq_domain_cpumask);
 	rq->walt_stats.cumulative_runnable_avg = 0;
 	rq->window_start = 0;
 	rq->cum_window_start = 0;
@@ -3412,4 +3432,7 @@ void walt_sched_init_rq(struct rq *rq)
 	}
 	rq->cum_window_demand = 0;
 	rq->notif_pending = false;
+
+	walt_cpu_util_freq_divisor =
+	    (sched_ravg_window >> SCHED_CAPACITY_SHIFT) * 100;
 }

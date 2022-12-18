@@ -46,6 +46,7 @@ extern struct mutex cluster_lock;
 extern rwlock_t related_thread_group_lock;
 extern __read_mostly unsigned int sched_ravg_hist_size;
 extern __read_mostly unsigned int sched_freq_aggregate;
+extern __read_mostly int sched_freq_aggregate_threshold;
 extern __read_mostly unsigned int sched_window_stats_policy;
 extern __read_mostly unsigned int sched_group_upmigrate;
 extern __read_mostly unsigned int sched_group_downmigrate;
@@ -55,7 +56,7 @@ extern struct sched_cluster init_cluster;
 extern void update_task_ravg(struct task_struct *p, struct rq *rq, int event,
 						u64 wallclock, u64 irqtime);
 
-extern unsigned int walt_big_tasks(int cpu);
+extern unsigned int nr_eligible_big_tasks(int cpu);
 
 static inline void
 inc_nr_big_task(struct walt_sched_stats *stats, struct task_struct *p)
@@ -154,6 +155,8 @@ extern void mark_task_starting(struct task_struct *p);
 extern void set_window_start(struct rq *rq);
 void account_irqtime(int cpu, struct task_struct *curr, u64 delta,
                                   u64 wallclock);
+void walt_fixup_cumulative_runnable_avg(struct rq *rq, struct task_struct *p,
+					u64 new_task_load);
 
 
 
@@ -284,7 +287,7 @@ static inline int same_cluster(int src_cpu, int dst_cpu)
 
 void walt_irq_work(struct irq_work *irq_work);
 
-void walt_sched_init_rq(struct rq *rq);
+void walt_sched_init(struct rq *rq);
 
 extern int __read_mostly min_power_cpu;
 static inline int walt_start_cpu(int prev_cpu)
@@ -300,18 +303,15 @@ extern void walt_rotate_work_init(void);
 extern void walt_rotation_checkpoint(int nr_big);
 extern unsigned int walt_rotation_enabled;
 
-extern __read_mostly bool sched_freq_aggr_en;
-static inline void walt_enable_frequency_aggregation(bool enable)
-{
-	sched_freq_aggr_en = enable;
-}
-
 #else /* CONFIG_SCHED_WALT */
 
-static inline void walt_sched_init_rq(struct rq *rq) { }
+static inline void walt_sched_init(struct rq *rq) { }
 static inline void walt_rotate_work_init(void) { }
 static inline void walt_rotation_checkpoint(int nr_big) { }
 static inline void walt_update_last_enqueue(struct task_struct *p) { }
+static inline void walt_fixup_cumulative_runnable_avg(struct rq *rq,
+						      struct task_struct *p,
+						      u64 new_task_load) { }
 
 static inline void update_task_ravg(struct task_struct *p, struct rq *rq,
 				int event, u64 wallclock, u64 irqtime) { }
@@ -320,7 +320,7 @@ static inline void walt_inc_cumulative_runnable_avg(struct rq *rq,
 {
 }
 
-static inline unsigned int walt_big_tasks(int cpu)
+static inline unsigned int nr_eligible_big_tasks(int cpu)
 {
 	return 0;
 }
